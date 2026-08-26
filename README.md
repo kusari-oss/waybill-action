@@ -118,14 +118,14 @@ single unified SBOM covering both:
 |-------|-------------|---------|
 | `path` | Directory to scan (mutually exclusive with `image`) | `.` (if `image` not set) |
 | `image` | Container image reference or tarball (mutually exclusive with `path`) | |
-| `format` | Output format: `cyclonedx-json`, `spdx-2.3-json`, `spdx-3.0.1-json` | `cyclonedx-json` |
+| `format` | Output format: `cyclonedx-json`, `spdx-2.3-json`, `spdx-3-json` | `cyclonedx-json` |
 | `output-file` | Output file path for the SBOM | `sbom.json` |
 | `upload-artifact` | Upload SBOM as workflow artifact | `true` |
 | `artifact-name` | Name of the uploaded artifact | `sbom` |
 | `waybill-version` | waybill release version to use | `v0.2.0` |
 | `include-dev` | Include dev/build/test scoped dependencies | `false` |
 | `offline` | Disable outbound network calls for enrichment | `false` |
-| `image-src` | Image source order: `docker`, `remote`, or `docker,remote` | `docker,remote` |
+| `image-src` | Image source order: comma-separated list of `docker`, `podman`, `remote` | `docker,remote` |
 
 ## Outputs
 

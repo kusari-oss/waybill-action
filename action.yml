@@ -16,7 +16,7 @@ inputs:
     required: false
     default: ''
   format:
-    description: 'Output format: cyclonedx-json, spdx-2.3-json, spdx-3.0.1-json'
+    description: 'Output format: cyclonedx-json, spdx-2.3-json, spdx-3-json'
     required: false
     default: 'cyclonedx-json'
   output-file:
@@ -44,7 +44,7 @@ inputs:
     required: false
     default: 'false'
   image-src:
-    description: 'Image source resolution order (docker, remote, or docker,remote)'
+    description: 'Image source resolution order: comma-separated list of docker, podman, remote (e.g. docker,remote)'
     required: false
     default: ''
 
