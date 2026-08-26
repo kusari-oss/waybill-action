@@ -1,4 +1,4 @@
-# Contributing to mikebom-action
+# Contributing to waybill-action
 
 Thank you for your interest in contributing! This document provides guidelines
 for contributing to this project.
@@ -28,7 +28,7 @@ You can test the action locally by running the script directly:
 export INPUT_PATH="."
 export INPUT_FORMAT="cyclonedx-json"
 export INPUT_OUTPUT_FILE="test-sbom.json"
-export INPUT_MIKEBOM_VERSION="v0.1.0-alpha.14"
+export INPUT_WAYBILL_VERSION="v0.2.0"
 export INPUT_INCLUDE_DEV="false"
 export INPUT_OFFLINE="false"
 export INPUT_IMAGE=""

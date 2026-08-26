@@ -19,6 +19,6 @@ jobs:
         with:
           path: '.'
           format: 'cyclonedx-json'
-          output-file: 'mikebom-action.sbom.cdx.json'
+          output-file: 'waybill-action.sbom.cdx.json'
           artifact-name: 'project-sbom'
 

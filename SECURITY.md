@@ -26,7 +26,7 @@ We will acknowledge receipt within 48 hours and aim to release a fix within
 ## Security Best Practices in This Action
 
 - All third-party actions are pinned by full SHA commit hash
-- The mikebom binary is verified against published SHA256 checksums
+- The waybill binary is verified against published SHA256 checksums
 - The action requests minimal permissions (`contents: read`)
 - Dependabot is configured to keep dependencies up to date
 - OpenSSF Scorecard runs weekly to monitor security posture

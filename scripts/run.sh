@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # =============================================================================
-# mikebom SBOM Action - Download and execute mikebom
+# waybill SBOM Action - Download and execute waybill
 # =============================================================================
 
-MIKEBOM_VERSION="${INPUT_MIKEBOM_VERSION:-v0.1.0-alpha.14}"
+WAYBILL_VERSION="${INPUT_WAYBILL_VERSION:-v0.2.0}"
 SCAN_PATH="${INPUT_PATH}"
 SCAN_IMAGE="${INPUT_IMAGE}"
 FORMAT="${INPUT_FORMAT:-cyclonedx-json}"
@@ -48,16 +48,16 @@ case "${ARCH}" in
     ;;
 esac
 
-BINARY_NAME="mikebom-${MIKEBOM_VERSION}-${PLATFORM_ARCH}-${PLATFORM_OS}"
-DOWNLOAD_URL="https://github.com/kusari-sandbox/mikebom/releases/download/${MIKEBOM_VERSION}/${BINARY_NAME}.tar.gz"
-CHECKSUM_URL="https://github.com/kusari-sandbox/mikebom/releases/download/${MIKEBOM_VERSION}/SHA256SUMS"
+BINARY_NAME="waybill-${WAYBILL_VERSION}-${PLATFORM_ARCH}-${PLATFORM_OS}"
+DOWNLOAD_URL="https://github.com/kusari-oss/waybill/releases/download/${WAYBILL_VERSION}/${BINARY_NAME}.tar.gz"
+CHECKSUM_URL="https://github.com/kusari-oss/waybill/releases/download/${WAYBILL_VERSION}/SHA256SUMS"
 
 # --- Download and verify ------------------------------------------------------
 
-INSTALL_DIR="${RUNNER_TEMP:-/tmp}/mikebom"
+INSTALL_DIR="${RUNNER_TEMP:-/tmp}/waybill"
 mkdir -p "${INSTALL_DIR}"
 
-echo "::group::Downloading mikebom ${MIKEBOM_VERSION} (${PLATFORM_ARCH}-${PLATFORM_OS})"
+echo "::group::Downloading waybill ${WAYBILL_VERSION} (${PLATFORM_ARCH}-${PLATFORM_OS})"
 echo "URL: ${DOWNLOAD_URL}"
 
 curl -fsSL --retry 3 -o "${INSTALL_DIR}/${BINARY_NAME}.tar.gz" "${DOWNLOAD_URL}"
@@ -75,26 +75,27 @@ fi
 
 echo "Extracting..."
 tar -xzf "${BINARY_NAME}.tar.gz"
-chmod +x "${BINARY_NAME}/mikebom"
-mv "${BINARY_NAME}/mikebom" ./mikebom
+chmod +x "${BINARY_NAME}/waybill"
+mv "${BINARY_NAME}/waybill" ./waybill
 cd - >/dev/null
 
-MIKEBOM="${INSTALL_DIR}/mikebom"
-echo "mikebom installed at: ${MIKEBOM}"
-"${MIKEBOM}" --version || true
+WAYBILL="${INSTALL_DIR}/waybill"
+echo "waybill installed at: ${WAYBILL}"
+"${WAYBILL}" --version || true
 echo "::endgroup::"
 
 # --- Build command ------------------------------------------------------------
 
-CMD=("${MIKEBOM}")
+CMD=("${WAYBILL}")
 
 # Global flags
 if [[ "${OFFLINE}" == "true" ]]; then
   CMD+=("--offline")
 fi
 
-if [[ "${INCLUDE_DEV}" == "true" ]]; then
-  CMD+=("--include-dev")
+# waybill includes all scopes by default; exclude dev/build/test unless requested
+if [[ "${INCLUDE_DEV}" != "true" ]]; then
+  CMD+=("--exclude-scope" "dev,build,test")
 fi
 
 CMD+=("sbom" "scan")
@@ -115,7 +116,7 @@ CMD+=("--output" "${OUTPUT_FILE}")
 
 # --- Execute ------------------------------------------------------------------
 
-echo "::group::Running mikebom SBOM scan"
+echo "::group::Running waybill SBOM scan"
 echo "Command: ${CMD[*]}"
 "${CMD[@]}"
 echo "::endgroup::"
