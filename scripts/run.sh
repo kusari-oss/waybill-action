@@ -21,6 +21,10 @@ INCLUDE_DEV="${INPUT_INCLUDE_DEV:-false}"
 OFFLINE="${INPUT_OFFLINE:-false}"
 IMAGE_SRC="${INPUT_IMAGE_SRC:-}"
 EXTRA_ARGS="${INPUT_ARGS:-}"
+ATTEST="${INPUT_ATTEST:-false}"
+ATTEST_SUBJECT_PATH="${INPUT_ATTEST_SUBJECT_PATH:-}"
+ATTEST_SUBJECT_NAME="${INPUT_ATTEST_SUBJECT_NAME:-}"
+ATTEST_SUBJECT_DIGEST="${INPUT_ATTEST_SUBJECT_DIGEST:-}"
 
 fail() {
   echo "::error::$*"
@@ -80,6 +84,33 @@ case "${SIGN}" in
   *)
     fail "Unknown sign mode '${SIGN}'. Use keyless, key or none."
     ;;
+esac
+
+case "${ATTEST}" in
+  false) ;;
+  true)
+    if [[ -n "${ATTEST_SUBJECT_PATH}" ]]; then
+      [[ -z "${ATTEST_SUBJECT_NAME}${ATTEST_SUBJECT_DIGEST}" ]] \
+        || fail "attest: give either attest-subject-path, or attest-subject-name with attest-subject-digest, not both."
+    else
+      [[ -n "${ATTEST_SUBJECT_NAME}" && -n "${ATTEST_SUBJECT_DIGEST}" ]] \
+        || fail "attest: true needs the artifact the SBOM describes: attest-subject-path, or attest-subject-name with attest-subject-digest."
+      [[ "${ATTEST_SUBJECT_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] \
+        || fail "attest-subject-digest must be sha256:<64 hex digits>."
+    fi
+    [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]] \
+      || fail "attest: true needs 'permissions: id-token: write' and 'attestations: write'."
+    attestable=false
+    for f in "${FORMAT_LIST[@]}"; do
+      [[ "${f}" == "spdx-3-json" ]] || attestable=true
+    done
+    [[ "${attestable}" == "true" ]] \
+      || fail "attest: GitHub attestations accept CycloneDX and SPDX 2.x, not SPDX 3. Add cyclonedx-json or spdx-2.3-json to format."
+    case ",${FORMATS// /}," in
+      *,spdx-3-json,*) echo "::warning::attest: the SPDX 3 SBOM is not attested; GitHub attestations accept CycloneDX and SPDX 2.x only." ;;
+    esac
+    ;;
+  *) fail "attest must be true or false." ;;
 esac
 
 case "${VERIFY_PROVENANCE}" in
@@ -251,6 +282,11 @@ for i in "${!FORMAT_LIST[@]}"; do
   out="${OUTPUTS[$i]}"
   [[ -f "${out}" ]] || fail "waybill reported success but ${out} was not written."
   SBOM_PATHS+=("$(abspath "${out}")")
+  case "${FORMAT_LIST[$i]}" in
+    cyclonedx-json) echo "cyclonedx-path=$(abspath "${out}")" >> "${GITHUB_OUTPUT}" ;;
+    spdx-2.3-json)  echo "spdx23-path=$(abspath "${out}")" >> "${GITHUB_OUTPUT}" ;;
+    spdx-3-json)    echo "spdx3-path=$(abspath "${out}")" >> "${GITHUB_OUTPUT}" ;;
+  esac
   sig=""
   case "${SIGN}" in
     keyless) sig="${out}.sig.bundle.json" ;;
