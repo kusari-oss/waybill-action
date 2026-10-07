@@ -30,67 +30,153 @@ jobs:
           bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint
 
-  integration-test-path:
-    name: "Integration Test: Directory Scan"
-    runs-on: ubuntu-latest
+  # The default path: latest waybill, provenance verified, all three formats,
+  # Sigstore keyless. Each signature is verified with cosign against the
+  # identity the action reports, on every platform waybill ships for.
+  signed:
+    name: "Signed SBOMs (${{ matrix.os }})"
+    # Pull requests from forks get no OIDC token; the no-token job covers them.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Clone seebom as realistic test target
-        run: git clone --depth 1 https://github.com/seebom-labs/seebom.git /tmp/seebom
-
-      - name: Generate SBOM for Go project (seebom backend)
-        uses: ./
+      - name: Clone seebom as a realistic scan target
+        run: git clone --depth 1 https://github.com/seebom-labs/seebom.git "${RUNNER_TEMP}/seebom"
+      - name: Generate signed SBOMs
         id: sbom
+        uses: ./
         with:
-          path: '/tmp/seebom/backend'
-          format: 'cyclonedx-json'
-          output-file: 'test-sbom.json'
-          upload-artifact: 'false'
-
-      - name: Verify SBOM was generated with components
+          path: ${{ runner.temp }}/seebom/backend
+          format: cyclonedx-json,spdx-2.3-json,spdx-3-json
+          output-dir: sboms
+          artifact-name: sbom-${{ matrix.os }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Verify every SBOM's signature
+        env:
+          IDENTITY: ${{ steps.sbom.outputs.signing-identity }}
+          VERSION: ${{ steps.sbom.outputs.waybill-version }}
         run: |
-          if [[ ! -f "test-sbom.json" ]]; then
-            echo "::error::SBOM file not found"
-            exit 1
-          fi
-          echo "SBOM generated at: ${{ steps.sbom.outputs.sbom-path }}"
-          COMPONENTS=$(python3 -c "import json; print(len(json.load(open('test-sbom.json'))['components']))")
-          echo "Components found: ${COMPONENTS}"
-          if [[ "${COMPONENTS}" -lt 1 ]]; then
-            echo "::error::No components found in SBOM — expected Go dependencies"
+          set -euo pipefail
+          echo "waybill ${VERSION}; identity ${IDENTITY}"
+          [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::expected a release tag, got '${VERSION}'"; exit 1; }
+          [[ "${IDENTITY}" == "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/ci.yml@"* ]] \
+            || { echo "::error::unexpected signing identity '${IDENTITY}'"; exit 1; }
+          for f in sboms/sbom.cdx.json sboms/sbom.spdx.json sboms/sbom.spdx3.json; do
+            cosign verify-blob --bundle "${f}.sig.bundle.json" \
+              --certificate-identity "${IDENTITY}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "${f}"
+          done
+          py=$(command -v python3 || command -v python)
+          components=$("${py}" -c "import json; print(len(json.load(open('sboms/sbom.cdx.json'))['components']))")
+          echo "components: ${components}"
+          [[ "${components}" -gt 0 ]] || { echo "::error::no components found"; exit 1; }
+      - name: A changed SBOM no longer verifies
+        env:
+          IDENTITY: ${{ steps.sbom.outputs.signing-identity }}
+        run: |
+          set -uo pipefail
+          sed -i.bak 's/"bomFormat"/"bomFormat" /' sboms/sbom.cdx.json
+          if cosign verify-blob --bundle sboms/sbom.cdx.json.sig.bundle.json \
+              --certificate-identity "${IDENTITY}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              sboms/sbom.cdx.json; then
+            echo "::error::a modified SBOM verified"
             exit 1
           fi
 
-  integration-test-image:
-    name: "Integration Test: Container Image Scan"
+  image:
+    name: "Signed SBOM of a container image"
+    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Generate SBOM for container image
-        uses: ./
+      - name: Generate SBOM for a container image
         id: sbom
+        uses: ./
         with:
           image: 'gcr.io/distroless/static-debian12:latest'
           image-src: 'remote'
-          format: 'cyclonedx-json'
           output-file: 'image-sbom.json'
           upload-artifact: 'false'
-
-      - name: Verify SBOM was generated
+      - name: Verify the SBOM has components and a signature
         run: |
-          if [[ ! -f "image-sbom.json" ]]; then
-            echo "::error::SBOM file not found"
-            exit 1
-          fi
-          echo "SBOM generated at: ${{ steps.sbom.outputs.sbom-path }}"
-          COMPONENTS=$(python3 -c "import json; print(len(json.load(open('image-sbom.json'))['components']))")
-          echo "Components found: ${COMPONENTS}"
-          if [[ "${COMPONENTS}" -lt 1 ]]; then
-            echo "::error::No components found in image SBOM"
-            exit 1
-          fi
+          set -euo pipefail
+          components=$(python3 -c "import json; print(len(json.load(open('image-sbom.json'))['components']))")
+          echo "components: ${components}"
+          [[ "${components}" -gt 0 ]] || { echo "::error::no components in image SBOM"; exit 1; }
+          [[ -s image-sbom.json.sig.bundle.json ]] || { echo "::error::no signature bundle"; exit 1; }
 
+  static-key:
+    name: "Static-key signing"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Make a throwaway key
+        run: openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "${RUNNER_TEMP}/key.pem"
+      - name: Generate SBOMs signed with the key
+        id: sbom
+        uses: ./
+        with:
+          path: '.'
+          format: cyclonedx-json,spdx-2.3-json
+          output-dir: sboms
+          sign: key
+          sign-key: ${{ runner.temp }}/key.pem
+          upload-artifact: 'false'
+      - name: Verify the signatures are present
+        env:
+          SIGS: ${{ steps.sbom.outputs.signature-paths }}
+        run: |
+          set -euo pipefail
+          python3 -c "import json,sys; s=json.load(open('sboms/sbom.cdx.json')).get('signature',{}); sys.exit(0 if s.get('value') else 1)" \
+            || { echo "::error::CycloneDX has no JSF signature"; exit 1; }
+          [[ -s sboms/sbom.spdx.json.sig.json ]] || { echo "::error::SPDX has no DSSE sidecar"; exit 1; }
+          echo "${SIGS}" | grep -q 'sbom.spdx.json.sig.json$' || { echo "::error::signature-paths output is wrong: ${SIGS}"; exit 1; }
 
-
+  # A job without id-token: write (as every fork pull request is) must fail
+  # before running anything, with an actionable message, and write nothing.
+  no-token:
+    name: "Keyless signing without an OIDC token fails closed"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Generate SBOM (expected to fail)
+        id: sbom
+        continue-on-error: true
+        uses: ./
+        with:
+          path: '.'
+          output-file: 'unsigned.json'
+          upload-artifact: 'false'
+      - name: Check it failed and wrote nothing
+        env:
+          OUTCOME: ${{ steps.sbom.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "${OUTCOME}" == "failure" ]] || { echo "::error::expected failure, got ${OUTCOME}"; exit 1; }
+          [[ ! -e unsigned.json ]] || { echo "::error::an unsigned SBOM was written"; exit 1; }
+      - name: sign none is the explicit opt-out
+        uses: ./
+        with:
+          path: '.'
+          sign: none
+          output-file: 'unsigned.json'
+          upload-artifact: 'false'
+      - name: Check the unsigned SBOM
+        run: |
+          set -euo pipefail
+          [[ -s unsigned.json && ! -e unsigned.json.sig.bundle.json ]]

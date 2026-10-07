@@ -1,5 +1,5 @@
 name: 'waybill SBOM Action'
-description: 'Generate Software Bill of Materials (SBOM) using waybill — supports CycloneDX 1.6, SPDX 2.3, and SPDX 3.0.1'
+description: 'Generate signed SBOMs with waybill: CycloneDX 1.6, SPDX 2.3 and SPDX 3.0.1, signed with Sigstore keyless by default'
 author: 'mfahlandt'
 
 branding:
@@ -8,7 +8,7 @@ branding:
 
 inputs:
   path:
-    description: 'Directory path to scan for SBOM generation (mutually exclusive with image)'
+    description: 'Directory to scan (mutually exclusive with image). Defaults to "." when image is not set.'
     required: false
     default: ''
   image:
@@ -16,25 +16,41 @@ inputs:
     required: false
     default: ''
   format:
-    description: 'Output format: cyclonedx-json, spdx-2.3-json, spdx-3-json'
+    description: 'Comma-separated output formats: cyclonedx-json, spdx-2.3-json, spdx-3-json'
     required: false
     default: 'cyclonedx-json'
   output-file:
-    description: 'Output file path for the generated SBOM'
+    description: 'Output path when a single format is requested. Default: sbom.json'
     required: false
-    default: 'sbom.json'
-  upload-artifact:
-    description: 'Whether to upload the SBOM as a workflow artifact'
+    default: ''
+  output-dir:
+    description: 'Directory for the outputs when several formats are requested (sbom.cdx.json, sbom.spdx.json, sbom.spdx3.json)'
+    required: false
+    default: '.'
+  sign:
+    description: >-
+      How to sign each SBOM: "keyless" (Sigstore, using the workflow identity; needs
+      `permissions: id-token: write`), "key" (a static key, see sign-key), or "none"
+    required: false
+    default: 'keyless'
+  sign-key:
+    description: 'Path to a PEM private key, for sign: key'
+    required: false
+    default: ''
+  sign-key-passphrase:
+    description: 'Passphrase for an encrypted sign-key (pass it from a secret)'
+    required: false
+    default: ''
+  waybill-version:
+    description: 'waybill release to use: "latest" (the newest non-prerelease) or a tag such as v0.10.0'
+    required: false
+    default: 'latest'
+  verify-provenance:
+    description: >-
+      Verify the waybill archive's SLSA provenance attestation against waybill's release
+      workflow before running it (requires the gh CLI, present on GitHub-hosted runners)
     required: false
     default: 'true'
-  artifact-name:
-    description: 'Name of the uploaded artifact'
-    required: false
-    default: 'sbom'
-  waybill-version:
-    description: 'Version of waybill to use (e.g. v0.2.0). Defaults to latest.'
-    required: false
-    default: 'v0.2.0'
   include-dev:
     description: 'Include dev/build/test scoped dependencies (when false, runs waybill with --exclude-scope dev,build,test)'
     required: false
@@ -47,34 +63,71 @@ inputs:
     description: 'Image source resolution order: comma-separated list of docker, podman, remote (e.g. docker,remote)'
     required: false
     default: ''
+  args:
+    description: 'Extra arguments for `waybill sbom scan`, one per line'
+    required: false
+    default: ''
+  upload-artifact:
+    description: 'Upload the SBOMs and their signatures as a workflow artifact'
+    required: false
+    default: 'true'
+  artifact-name:
+    description: 'Name of the uploaded artifact'
+    required: false
+    default: 'sbom'
+  github-token:
+    description: 'Token for resolving and downloading the waybill release and verifying its provenance'
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   sbom-path:
-    description: 'Absolute path to the generated SBOM file'
+    description: 'Absolute path to the (first) generated SBOM'
     value: ${{ steps.run-waybill.outputs.sbom-path }}
+  sbom-paths:
+    description: 'Absolute paths of every generated SBOM, one per line'
+    value: ${{ steps.run-waybill.outputs.sbom-paths }}
+  signature-paths:
+    description: 'Absolute paths of every detached signature (Sigstore bundle or DSSE envelope), one per line'
+    value: ${{ steps.run-waybill.outputs.signature-paths }}
+  signing-identity:
+    description: 'For keyless signing, the certificate identity a verifier must expect'
+    value: ${{ steps.run-waybill.outputs.signing-identity }}
+  verify-command:
+    description: 'For keyless signing, the cosign command that verifies the first SBOM'
+    value: ${{ steps.run-waybill.outputs.verify-command }}
+  waybill-version:
+    description: 'The waybill release that was used'
+    value: ${{ steps.run-waybill.outputs.waybill-version }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Download and run waybill
+    - name: Download, verify and run waybill
       id: run-waybill
       shell: bash
       env:
+        GH_TOKEN: ${{ inputs.github-token }}
         INPUT_PATH: ${{ inputs.path }}
         INPUT_IMAGE: ${{ inputs.image }}
         INPUT_FORMAT: ${{ inputs.format }}
         INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_SIGN: ${{ inputs.sign }}
+        INPUT_SIGN_KEY: ${{ inputs.sign-key }}
+        WAYBILL_SIGN_KEY_PASSPHRASE: ${{ inputs.sign-key-passphrase }}
         INPUT_WAYBILL_VERSION: ${{ inputs.waybill-version }}
+        INPUT_VERIFY_PROVENANCE: ${{ inputs.verify-provenance }}
         INPUT_INCLUDE_DEV: ${{ inputs.include-dev }}
         INPUT_OFFLINE: ${{ inputs.offline }}
         INPUT_IMAGE_SRC: ${{ inputs.image-src }}
-      run: ${{ github.action_path }}/scripts/run.sh
+        INPUT_ARGS: ${{ inputs.args }}
+      run: '"${GITHUB_ACTION_PATH}/scripts/run.sh"'
 
-    - name: Upload SBOM artifact
+    - name: Upload SBOMs and signatures
       if: inputs.upload-artifact == 'true'
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: ${{ inputs.artifact-name }}
-        path: ${{ steps.run-waybill.outputs.sbom-path }}
+        path: ${{ steps.run-waybill.outputs.artifact-paths }}
         if-no-files-found: error
-
