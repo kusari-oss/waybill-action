@@ -1,7 +1,7 @@
 # waybill-action
 
-[![CI](https://github.com/mfahlandt/waybill-action/actions/workflows/ci.yml/badge.svg)](https://github.com/mfahlandt/waybill-action/actions/workflows/ci.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/mfahlandt/waybill-action/badge)](https://scorecard.dev/viewer/?uri=github.com/mfahlandt/waybill-action)
+[![CI](https://github.com/kusari-oss/waybill-action/actions/workflows/ci.yml/badge.svg)](https://github.com/kusari-oss/waybill-action/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kusari-oss/waybill-action/badge)](https://scorecard.dev/viewer/?uri=github.com/kusari-oss/waybill-action)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 A GitHub Action that generates **signed** Software Bills of Materials with
@@ -12,6 +12,10 @@ hashes, real dependency graphs and evidence.
 By default, every SBOM is signed with Sigstore keyless, using your workflow's
 own identity. The action always uses the latest waybill release, and verifies
 waybill's build provenance before running it.
+
+This action is a hard fork of
+[mfahlandt/waybill-action](https://github.com/mfahlandt/waybill-action), created
+by Mario Fahlandt, and keeps its history.
 
 ## Quick start
 
@@ -30,7 +34,7 @@ jobs:
       id-token: write   # Sigstore keyless signing
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: mfahlandt/waybill-action@v1
+      - uses: kusari-oss/waybill-action@v1
         with:
           format: cyclonedx-json,spdx-3-json
 ```
@@ -86,7 +90,7 @@ GitHub never gives fork pull requests an OIDC token, so they can't sign
 keyless. Opt them out explicitly:
 
 ```yaml
-- uses: mfahlandt/waybill-action@v1
+- uses: kusari-oss/waybill-action@v1
   with:
     sign: ${{ github.event.pull_request.head.repo.fork && 'none' || 'keyless' }}
 ```
@@ -96,7 +100,7 @@ keyless. Opt them out explicitly:
 ### Scan a container image
 
 ```yaml
-- uses: mfahlandt/waybill-action@v1
+- uses: kusari-oss/waybill-action@v1
   with:
     image: 'gcr.io/distroless/static-debian12:latest'
     image-src: 'remote'
@@ -109,7 +113,7 @@ keyless. Opt them out explicitly:
 - run: echo "$SBOM_SIGNING_KEY" > "$RUNNER_TEMP/key.pem"
   env:
     SBOM_SIGNING_KEY: ${{ secrets.SBOM_SIGNING_KEY }}
-- uses: mfahlandt/waybill-action@v1
+- uses: kusari-oss/waybill-action@v1
   with:
     sign: key
     sign-key: ${{ runner.temp }}/key.pem
@@ -119,7 +123,7 @@ keyless. Opt them out explicitly:
 ### Attach the SBOMs to a release
 
 ```yaml
-- uses: mfahlandt/waybill-action@v1
+- uses: kusari-oss/waybill-action@v1
   id: sbom
   with:
     format: cyclonedx-json,spdx-3-json
@@ -136,7 +140,7 @@ keyless. Opt them out explicitly:
 These are excluded by default.
 
 ```yaml
-- uses: mfahlandt/waybill-action@v1
+- uses: kusari-oss/waybill-action@v1
   with:
     include-dev: 'true'
 ```
@@ -146,7 +150,7 @@ These are excluded by default.
 Pass extra `waybill sbom scan` arguments, one per line:
 
 ```yaml
-- uses: mfahlandt/waybill-action@v1
+- uses: kusari-oss/waybill-action@v1
   with:
     args: |
       --root-name
@@ -197,8 +201,9 @@ Pass extra `waybill sbom scan` arguments, one per line:
 
 CI signs and verifies SBOMs on all four, on every push.
 
-## Upgrading from v0
+## Upgrading from v0 (or from mfahlandt/waybill-action)
 
+- **Change `uses:`** to `kusari-oss/waybill-action@v1`.
 - **Signing is on by default.** Add `permissions: id-token: write` to the job,
   or set `sign: none` to keep the v0 behaviour.
 - **`waybill-version` defaults to `latest`** instead of a fixed old release.

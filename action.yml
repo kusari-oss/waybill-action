@@ -1,6 +1,6 @@
 name: 'waybill SBOM Action'
 description: 'Generate signed SBOMs with waybill: CycloneDX 1.6, SPDX 2.3 and SPDX 3.0.1, signed with Sigstore keyless by default'
-author: 'mfahlandt'
+author: 'kusari-oss'
 
 branding:
   icon: 'shield'
