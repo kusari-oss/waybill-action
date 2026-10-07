@@ -11,14 +11,16 @@ jobs:
   generate-sbom:
     name: Generate project SBOM
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # Sigstore keyless signing
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Generate SBOM
+      - name: Generate signed SBOM
         uses: ./
         with:
           path: '.'
-          format: 'cyclonedx-json'
-          output-file: 'waybill-action.sbom.cdx.json'
+          format: cyclonedx-json,spdx-3-json
+          output-dir: project-sbom
           artifact-name: 'project-sbom'
-
