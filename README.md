@@ -135,6 +135,41 @@ keyless. Opt them out explicitly:
       ${{ steps.sbom.outputs.signature-paths }}
 ```
 
+### Publish GitHub attestations
+
+`attest: true` also records each SBOM as a [GitHub attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations)
+about the artifact it describes. Anyone can then check it with `gh attestation verify`:
+
+```yaml
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+steps:
+  # ... build dist/app.tar.gz ...
+  - uses: kusari-oss/waybill-action@v1
+    with:
+      format: cyclonedx-json,spdx-2.3-json
+      attest: 'true'
+      attest-subject-path: dist/app.tar.gz
+```
+
+```sh
+gh attestation verify dist/app.tar.gz --repo <owner>/<repo> --predicate-type https://cyclonedx.org/bom
+gh attestation verify dist/app.tar.gz --repo <owner>/<repo> --predicate-type https://spdx.dev/Document/v2.3
+```
+
+To attest an image instead, pass `attest-subject-name` (the fully qualified
+image name) and `attest-subject-digest` (`sha256:...`, e.g. from
+`docker/build-push-action`'s `digest` output). Add `attest-push-to-registry: 'true'`
+to store the attestation alongside the image; that also needs `packages: write`
+and `artifact-metadata: write`.
+
+GitHub attestations accept CycloneDX and SPDX 2.x. **SPDX 3 is not attested.**
+`actions/attest` rejects it, so with SPDX 3 among several formats the action
+warns, and with SPDX 3 alone it fails before doing anything. The Sigstore
+signature on each SBOM, including SPDX 3, is unaffected.
+
 ### Include dev, build and test dependencies
 
 These are excluded by default.
@@ -175,6 +210,11 @@ Pass extra `waybill sbom scan` arguments, one per line:
 | `offline` | Disable outbound network calls for enrichment | `false` |
 | `image-src` | Image source order: comma-separated `docker`, `podman`, `remote` | waybill's default |
 | `args` | Extra `waybill sbom scan` arguments, one per line | |
+| `attest` | Also publish the CycloneDX and SPDX 2.3 SBOMs as GitHub attestations | `false` |
+| `attest-subject-path` | Artifact(s) the SBOM describes: a path, glob or newline-separated list | |
+| `attest-subject-name` | Or: the subject's name, e.g. a fully qualified image name | |
+| `attest-subject-digest` | With `attest-subject-name`: its digest, `sha256:...` | |
+| `attest-push-to-registry` | Push the attestation to the image registry | `false` |
 | `upload-artifact` | Upload the SBOMs and signatures as a workflow artifact | `true` |
 | `artifact-name` | Name of the uploaded artifact | `sbom` |
 | `github-token` | Token for downloading waybill and verifying its provenance | `${{ github.token }}` |
@@ -189,6 +229,8 @@ Pass extra `waybill sbom scan` arguments, one per line:
 | `signing-identity` | For keyless signing, the certificate identity verifiers must expect |
 | `verify-command` | For keyless signing, the `cosign verify-blob` command for the first SBOM |
 | `waybill-version` | The waybill release that was used |
+| `cyclonedx-path`, `spdx23-path`, `spdx3-path` | Absolute path to each format's SBOM, when requested |
+| `attestation-urls` | With `attest`, the URL of each attestation, one per line |
 
 ## Supported platforms
 
@@ -219,8 +261,8 @@ CI signs and verifies SBOMs on all four, on every push.
   release tag) before it runs.
 - **Signed outputs.** Keyless SBOM signatures are recorded in the public
   Sigstore transparency log.
-- **Least privilege.** Only `contents: read` and, for keyless signing,
-  `id-token: write`.
+- **Least privilege.** Only `contents: read`, plus `id-token: write` for
+  keyless signing and `attestations: write` when `attest` is on.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
