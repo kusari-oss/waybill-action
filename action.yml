@@ -67,6 +67,30 @@ inputs:
     description: 'Extra arguments for `waybill sbom scan`, one per line'
     required: false
     default: ''
+  attest:
+    description: >-
+      Also publish each SBOM as a GitHub attestation (actions/attest), so `gh attestation
+      verify --predicate-type ...` can check it. Needs `permissions: id-token: write` and
+      `attestations: write`, and a subject: attest-subject-path, or attest-subject-name
+      with attest-subject-digest
+    required: false
+    default: 'false'
+  attest-subject-path:
+    description: 'Path, glob or newline-separated list of the artifacts the SBOM describes'
+    required: false
+    default: ''
+  attest-subject-name:
+    description: 'Name of the subject the SBOM describes, e.g. a fully qualified image name'
+    required: false
+    default: ''
+  attest-subject-digest:
+    description: 'Digest of that subject, sha256:<hex>'
+    required: false
+    default: ''
+  attest-push-to-registry:
+    description: 'Push the attestation to the image registry (needs an image subject, packages: write and artifact-metadata: write)'
+    required: false
+    default: 'false'
   upload-artifact:
     description: 'Upload the SBOMs and their signatures as a workflow artifact'
     required: false
@@ -99,6 +123,18 @@ outputs:
   waybill-version:
     description: 'The waybill release that was used'
     value: ${{ steps.run-waybill.outputs.waybill-version }}
+  cyclonedx-path:
+    description: 'Absolute path to the CycloneDX SBOM, if requested'
+    value: ${{ steps.run-waybill.outputs.cyclonedx-path }}
+  spdx23-path:
+    description: 'Absolute path to the SPDX 2.3 SBOM, if requested'
+    value: ${{ steps.run-waybill.outputs.spdx23-path }}
+  spdx3-path:
+    description: 'Absolute path to the SPDX 3 SBOM, if requested'
+    value: ${{ steps.run-waybill.outputs.spdx3-path }}
+  attestation-urls:
+    description: 'With attest, the URL of each SBOM attestation, one per line'
+    value: ${{ steps.attestations.outputs.urls }}
 
 runs:
   using: 'composite'
@@ -122,7 +158,69 @@ runs:
         INPUT_OFFLINE: ${{ inputs.offline }}
         INPUT_IMAGE_SRC: ${{ inputs.image-src }}
         INPUT_ARGS: ${{ inputs.args }}
+        INPUT_ATTEST: ${{ inputs.attest }}
+        INPUT_ATTEST_SUBJECT_PATH: ${{ inputs.attest-subject-path }}
+        INPUT_ATTEST_SUBJECT_NAME: ${{ inputs.attest-subject-name }}
+        INPUT_ATTEST_SUBJECT_DIGEST: ${{ inputs.attest-subject-digest }}
+        INPUT_ATTEST_PUSH_TO_REGISTRY: ${{ inputs.attest-push-to-registry }}
       run: '"${GITHUB_ACTION_PATH}/scripts/run.sh"'
+
+    # One attestation per format. A composite action cannot loop, so each
+    # format has its own step, skipped when that format was not requested.
+    - name: Attest the CycloneDX SBOM
+      id: attest-cyclonedx
+      if: inputs.attest == 'true' && steps.run-waybill.outputs.cyclonedx-path != ''
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        sbom-path: ${{ steps.run-waybill.outputs.cyclonedx-path }}
+        subject-path: ${{ inputs.attest-subject-path }}
+        subject-name: ${{ inputs.attest-subject-name }}
+        subject-digest: ${{ inputs.attest-subject-digest }}
+        push-to-registry: ${{ inputs.attest-push-to-registry }}
+        create-storage-record: ${{ inputs.attest-push-to-registry }}
+        github-token: ${{ inputs.github-token }}
+
+    - name: Attest the SPDX 2.3 SBOM
+      id: attest-spdx23
+      if: inputs.attest == 'true' && steps.run-waybill.outputs.spdx23-path != ''
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        sbom-path: ${{ steps.run-waybill.outputs.spdx23-path }}
+        subject-path: ${{ inputs.attest-subject-path }}
+        subject-name: ${{ inputs.attest-subject-name }}
+        subject-digest: ${{ inputs.attest-subject-digest }}
+        push-to-registry: ${{ inputs.attest-push-to-registry }}
+        create-storage-record: ${{ inputs.attest-push-to-registry }}
+        github-token: ${{ inputs.github-token }}
+
+    - name: Attest the SPDX 3 SBOM
+      id: attest-spdx3
+      if: inputs.attest == 'true' && steps.run-waybill.outputs.spdx3-path != ''
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        sbom-path: ${{ steps.run-waybill.outputs.spdx3-path }}
+        subject-path: ${{ inputs.attest-subject-path }}
+        subject-name: ${{ inputs.attest-subject-name }}
+        subject-digest: ${{ inputs.attest-subject-digest }}
+        push-to-registry: ${{ inputs.attest-push-to-registry }}
+        create-storage-record: ${{ inputs.attest-push-to-registry }}
+        github-token: ${{ inputs.github-token }}
+
+    - name: Collect attestation URLs
+      id: attestations
+      if: inputs.attest == 'true'
+      shell: bash
+      env:
+        URLS: |
+          ${{ steps.attest-cyclonedx.outputs.attestation-url }}
+          ${{ steps.attest-spdx23.outputs.attestation-url }}
+          ${{ steps.attest-spdx3.outputs.attestation-url }}
+      run: |
+        {
+          echo "urls<<EOF_ATTEST_URLS"
+          printf '%s\n' "${URLS}" | sed '/^[[:space:]]*$/d'
+          echo "EOF_ATTEST_URLS"
+        } >> "${GITHUB_OUTPUT}"
 
     - name: Upload SBOMs and signatures
       if: inputs.upload-artifact == 'true'

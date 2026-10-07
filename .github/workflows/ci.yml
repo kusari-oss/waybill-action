@@ -120,6 +120,45 @@ jobs:
           [[ "${components}" -gt 0 ]] || { echo "::error::no components in image SBOM"; exit 1; }
           [[ -s image-sbom.json.sig.bundle.json ]] || { echo "::error::no signature bundle"; exit 1; }
 
+  attest:
+    name: "GitHub attestations"
+    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build a stand-in artifact
+        run: mkdir -p dist && tar -czf dist/app.tar.gz scripts action.yml
+      - name: Generate, sign and attest SBOMs for it
+        id: sbom
+        uses: ./
+        with:
+          path: '.'
+          format: cyclonedx-json,spdx-2.3-json,spdx-3-json
+          output-dir: sboms
+          attest: 'true'
+          attest-subject-path: dist/app.tar.gz
+          upload-artifact: 'false'
+      - name: Verify the attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URLS: ${{ steps.sbom.outputs.attestation-urls }}
+        run: |
+          set -euo pipefail
+          echo "attestation URLs:"; echo "${URLS}"
+          [[ $(echo "${URLS}" | grep -c '^https://') -eq 3 ]] || { echo "::error::expected 3 attestation URLs"; exit 1; }
+          gh attestation verify dist/app.tar.gz --repo "${GITHUB_REPOSITORY}" --format json \
+            | python3 -c "import json,sys; [print(a['verificationResult']['statement']['predicateType']) for a in json.load(sys.stdin)]" \
+            | sort -u | tee types.txt
+          for t in https://cyclonedx.org/bom https://spdx.dev/Document/v2.3; do
+            grep -qx "${t}" types.txt || { echo "::error::no ${t} attestation"; exit 1; }
+            gh attestation verify dist/app.tar.gz --repo "${GITHUB_REPOSITORY}" --predicate-type "${t}" >/dev/null
+            echo "verified ${t}"
+          done
+
   static-key:
     name: "Static-key signing"
     runs-on: ubuntu-latest
