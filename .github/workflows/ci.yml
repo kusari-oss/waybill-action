@@ -151,8 +151,11 @@ jobs:
           echo "attestation URLs:"; echo "${URLS}"
           # CycloneDX and SPDX 2.3; SPDX 3 is not attestable (actions/attest refuses it).
           [[ $(echo "${URLS}" | grep -c '^https://') -eq 2 ]] || { echo "::error::expected 2 attestation URLs"; exit 1; }
-          gh attestation verify dist/app.tar.gz --repo "${GITHUB_REPOSITORY}" --format json \
-            | python3 -c "import json,sys; [print(a['verificationResult']['statement']['predicateType']) for a in json.load(sys.stdin)]" \
+          digest="sha256:$(sha256sum dist/app.tar.gz | cut -d' ' -f1)"
+          # Every predicate type recorded for this artifact.
+          gh api "repos/${GITHUB_REPOSITORY}/attestations/${digest}" \
+            --jq '.attestations[].bundle.dsseEnvelope.payload' \
+            | while read -r p; do echo "${p}" | base64 -d | python3 -c "import json,sys; print(json.load(sys.stdin)['predicateType'])"; done \
             | sort -u | tee types.txt
           for t in https://cyclonedx.org/bom https://spdx.dev/Document/v2.3; do
             grep -qx "${t}" types.txt || { echo "::error::no ${t} attestation"; exit 1; }
