@@ -149,7 +149,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "attestation URLs:"; echo "${URLS}"
-          [[ $(echo "${URLS}" | grep -c '^https://') -eq 3 ]] || { echo "::error::expected 3 attestation URLs"; exit 1; }
+          # CycloneDX and SPDX 2.3; SPDX 3 is not attestable (actions/attest refuses it).
+          [[ $(echo "${URLS}" | grep -c '^https://') -eq 2 ]] || { echo "::error::expected 2 attestation URLs"; exit 1; }
           gh attestation verify dist/app.tar.gz --repo "${GITHUB_REPOSITORY}" --format json \
             | python3 -c "import json,sys; [print(a['verificationResult']['statement']['predicateType']) for a in json.load(sys.stdin)]" \
             | sort -u | tee types.txt

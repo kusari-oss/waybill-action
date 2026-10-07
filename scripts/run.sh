@@ -100,6 +100,15 @@ case "${ATTEST}" in
     fi
     [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]] \
       || fail "attest: true needs 'permissions: id-token: write' and 'attestations: write'."
+    attestable=false
+    for f in "${FORMAT_LIST[@]}"; do
+      [[ "${f}" == "spdx-3-json" ]] || attestable=true
+    done
+    [[ "${attestable}" == "true" ]] \
+      || fail "attest: GitHub attestations accept CycloneDX and SPDX 2.x, not SPDX 3. Add cyclonedx-json or spdx-2.3-json to format."
+    case ",${FORMATS// /}," in
+      *,spdx-3-json,*) echo "::warning::attest: the SPDX 3 SBOM is not attested; GitHub attestations accept CycloneDX and SPDX 2.x only." ;;
+    esac
     ;;
   *) fail "attest must be true or false." ;;
 esac
